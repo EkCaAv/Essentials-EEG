@@ -1,0 +1,63 @@
+# Python cache and bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Build and packaging artifacts
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Virtual environments
+.venv/
+.venv311/
+venv/
+env/
+.venv-backups/
+
+# Documentos y medios
+*.pdf
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.bmp
+*.svg
+*.ico
+*.mp4
+*.mov
+*.avi
+
+# OS/editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.lock
+
+# Large raw EEG data and derived files in data/
+data/chb*/
+data/**/*.edf
+data/**/*.edf.seizures
+data/**/*_ictal*.csv
+data/**/*_interictal*.csv
+data/**/*_features*.csv
+
+# Experiment outputs and reports
+out_*/
+out_validation/
+results/
+results_high_spike_thresh/
+results_pediatric_study/
+
+# Local runtime artifacts
+*.pid
+*.seed
+
+# Excluir configuraciones locales y directorios temporales personales
+.claude/
+.claude/*
+.vscode/
+.idea/
+.lock
