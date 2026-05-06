@@ -2,6 +2,10 @@
 thesis_dashboard.py — Dashboard interactivo para la tesis de detección de
 crisis epilépticas focales pediátricas (CHB-MIT).
 
+Línea de investigación: Machine Learning. El dashboard reporta exclusivamente
+la comparación entre algoritmos clásicos (LogReg, RF, SVM, GradientBoosting)
+sobre características tabulares (bandpower + RMS + momentos estadísticos).
+
 Lanzamiento:
     streamlit run thesis_dashboard.py --server.port 8501
 
@@ -9,8 +13,7 @@ Secciones:
     1. Diseño Experimental (DoE)
     2. Datos
     3. Resultados ML Clásico
-    4. Resultados Deep Learning
-    5. Comparación Final
+    4. Comparación entre algoritmos
 """
 
 from __future__ import annotations
@@ -42,10 +45,6 @@ DEFAULT_OUT = ROOT / "out_thesis_final"
 
 CLASSICAL_DIR_DEFAULT = DEFAULT_OUT / "runs" / "classical_all_models"
 CLASSICAL_FALLBACK = DEFAULT_OUT / "runs" / "baseline_classical"
-CNN_DIR_DEFAULT = DEFAULT_OUT / "cnn_stft"
-CNN_FALLBACK = ROOT / "out_smoke_cnn"
-LSTM_DIR_DEFAULT = DEFAULT_OUT / "lstm_raw"
-LSTM_FALLBACK = ROOT / "out_smoke_lstm"
 DATASET_CSV_DEFAULT = CLASSICAL_FALLBACK / "windows_dataset.csv"
 COMPARISON_CSV_DEFAULT = DEFAULT_OUT / "comparison_table.csv"
 
@@ -97,8 +96,7 @@ seccion = st.sidebar.radio(
         "1. Diseño Experimental (DoE)",
         "2. Datos",
         "3. Resultados ML Clásico",
-        "4. Resultados Deep Learning",
-        "5. Comparación Final",
+        "4. Comparación entre algoritmos",
     ],
     index=0,
 )
@@ -109,25 +107,11 @@ st.sidebar.markdown("**Estado de runs**")
 classical_path = first_existing(
     [CLASSICAL_DIR_DEFAULT / "results.csv", CLASSICAL_FALLBACK / "results.csv"]
 )
-cnn_path = first_existing(
-    [CNN_DIR_DEFAULT / "results.csv", CNN_FALLBACK / "results.csv"]
-)
-lstm_path = first_existing(
-    [LSTM_DIR_DEFAULT / "results.csv", LSTM_FALLBACK / "results.csv"]
-)
 dataset_path = first_existing([DATASET_CSV_DEFAULT])
 
 st.sidebar.markdown(
     status_badge("Classical", classical_path is not None,
                  classical_path.parent.name if classical_path else "pendiente")
-)
-st.sidebar.markdown(
-    status_badge("CNN STFT", cnn_path is not None,
-                 cnn_path.parent.name if cnn_path else "pendiente")
-)
-st.sidebar.markdown(
-    status_badge("LSTM raw", lstm_path is not None,
-                 lstm_path.parent.name if lstm_path else "pendiente")
 )
 st.sidebar.markdown(
     status_badge("Dataset",  dataset_path is not None,
@@ -170,7 +154,7 @@ if seccion.startswith("1."):
         ### Factores y niveles
         | Factor              | Tipo         | Niveles                                              |
         |---------------------|--------------|------------------------------------------------------|
-        | **Tipo de modelo**  | Fijo         | LogReg · RF · SVM · GradientBoosting · CNN · BiLSTM  |
+        | **Tipo de modelo**  | Fijo         | LogReg · RF · SVM · GradientBoosting                 |
         | **Feature set**     | Fijo         | bp_only · bp+rms · bp+rms+kurt · bp+rms+kurt+skew    |
         | **Sujeto (held-out)** | Aleatorio  | 7 sujetos (chb05/09/14/16/20/22/23)                  |
         | **Ventana**         | Constante    | 5.0 s con 50 % overlap                               |
@@ -178,9 +162,9 @@ if seccion.startswith("1."):
 
     st.markdown("""
     ### Clasificación del diseño
-    - **Comparación de tratamientos** entre familias de modelos (clásico vs DL).
-    - **Diseño factorial parcial 6 × 4** sobre modelo × feature set para los
-      clásicos; los DL no usan features tabulares.
+    - **Comparación de tratamientos** entre algoritmos de Machine Learning
+      clásico (LogReg, RF, SVM, GradientBoosting).
+    - **Diseño factorial 4 × 4** sobre modelo × feature set.
     - **Diseño robusto inter-sujeto**: el sujeto entra como factor aleatorio
       mediante `GroupKFold(n_splits=7)` — cada fold deja a *un* paciente
       completamente fuera de entrenamiento.
@@ -368,153 +352,35 @@ elif seccion.startswith("3."):
 
 
 # ---------------------------------------------------------------------------
-# Sección 4: Resultados Deep Learning
+# Sección 4: Comparación entre algoritmos de ML clásico
 # ---------------------------------------------------------------------------
 
 elif seccion.startswith("4."):
-    st.title("4. Resultados — Deep Learning")
+    st.title("4. Comparación entre algoritmos de ML clásico")
 
-    tab_cnn, tab_lstm = st.tabs(["CNN (espectrograma STFT)", "BiLSTM (EEG crudo)"])
+    if classical_path is None:
+        banner_pendiente("Sin resultados clásicos para comparar todavía.")
+        st.stop()
 
-    def render_dl(results_path: Optional[Path], modelo: str) -> None:
-        if results_path is None:
-            banner_pendiente(f"Sin resultados aún para {modelo}.")
-            return
-        df = load_csv(str(results_path))
-        if df is None or df.empty:
-            banner_pendiente(f"results.csv vacío para {modelo}.")
-            return
-
-        st.caption(f"Fuente: `{results_path}`")
-
-        cols_show = [
-            "model", "feature_set", "n_features",
-            "auc_roc_mean", "auc_roc_std",
-            "pr_auc_mean", "pr_auc_std",
-            "sensitivity_mean", "specificity_mean",
-            "folds_with_nan_auc",
-        ]
-        cols_show = [c for c in cols_show if c in df.columns]
-
-        st.dataframe(
-            df[cols_show].style.format(
-                {
-                    "auc_roc_mean": "{:.4f}",
-                    "auc_roc_std": "{:.4f}",
-                    "pr_auc_mean": "{:.4f}",
-                    "pr_auc_std": "{:.4f}",
-                    "sensitivity_mean": "{:.4f}",
-                    "specificity_mean": "{:.4f}",
-                }
-            ),
-            use_container_width=True,
-            hide_index=True,
-        )
-
-        manifest_path = results_path.parent / "run_manifest.json"
-        runs_dir = results_path.parent / "runs"
-        if not manifest_path.exists() and runs_dir.exists():
-            for r in sorted(runs_dir.iterdir(), reverse=True):
-                cand = r / "run_manifest.json"
-                if cand.exists():
-                    manifest_path = cand
-                    break
-
-        if manifest_path.exists():
-            with st.expander("Manifiesto del run"):
-                with open(manifest_path) as f:
-                    st.json(json.load(f))
-
-        fold_path = results_path.parent / "cv_fold_metrics.csv"
-        if not fold_path.exists() and runs_dir.exists():
-            for r in sorted(runs_dir.iterdir(), reverse=True):
-                cand = r / "cv_fold_metrics.csv"
-                if cand.exists():
-                    fold_path = cand
-                    break
-
-        if fold_path.exists():
-            fold_df = load_csv(str(fold_path))
-            if fold_df is not None and not fold_df.empty:
-                st.markdown("#### Métricas por fold")
-                st.dataframe(
-                    fold_df.style.format(
-                        {c: "{:.4f}" for c in ["auc_roc", "pr_auc", "sensitivity",
-                                               "specificity", "accuracy"]
-                         if c in fold_df.columns}
-                    ),
-                    use_container_width=True,
-                    hide_index=True,
-                )
-
-                fig = px.bar(
-                    fold_df, x="fold", y="pr_auc",
-                    color="test_subjects" if "test_subjects" in fold_df.columns else None,
-                    title=f"{modelo} — PR-AUC por fold",
-                    labels={"pr_auc": "PR-AUC", "fold": "Fold"},
-                )
-                fig.update_layout(height=380, margin=dict(l=0, r=0, t=40, b=0))
-                st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.info("Sin métricas por fold disponibles.")
-
-    with tab_cnn:
-        render_dl(cnn_path, "CNN STFT")
-    with tab_lstm:
-        render_dl(lstm_path, "BiLSTM raw")
-
-
-# ---------------------------------------------------------------------------
-# Sección 5: Comparación Final
-# ---------------------------------------------------------------------------
-
-elif seccion.startswith("5."):
-    st.title("5. Comparación Final — Todos los Modelos")
-
-    cmp_path = COMPARISON_CSV_DEFAULT if COMPARISON_CSV_DEFAULT.exists() else None
-    df_cmp: Optional[pd.DataFrame] = None
-    if cmp_path is not None:
-        df_cmp = load_csv(str(cmp_path))
-
+    df_cmp = load_csv(str(classical_path))
     if df_cmp is None or df_cmp.empty:
-        st.info("`comparison_table.csv` aún no existe — construyendo tabla en vivo.")
-        rows = []
-        for path, role in [(classical_path, "classical"),
-                           (cnn_path, "cnn"),
-                           (lstm_path, "lstm")]:
-            if path is None:
-                continue
-            d = load_csv(str(path))
-            if d is None or d.empty:
-                continue
-            for _, r in d.iterrows():
-                rows.append({
-                    "model": r.get("model"),
-                    "feature_set": r.get("feature_set"),
-                    "category": "Deep Learning" if role in ("cnn", "lstm")
-                                else "Classical ML",
-                    "pr_auc_mean": r.get("pr_auc_mean", float("nan")),
-                    "pr_auc_std": r.get("pr_auc_std", float("nan")),
-                    "auc_roc_mean": r.get("auc_roc_mean", float("nan")),
-                    "auc_roc_std": r.get("auc_roc_std", float("nan")),
-                    "sensitivity_mean": r.get("sensitivity_mean", float("nan")),
-                    "specificity_mean": r.get("specificity_mean", float("nan")),
-                })
-        if not rows:
-            banner_pendiente("Sin resultados para consolidar todavía.")
-            st.stop()
-        df_cmp = pd.DataFrame(rows)
+        banner_pendiente("`results.csv` clásico vacío o ilegible.")
+        st.stop()
 
     df_cmp = df_cmp.sort_values("pr_auc_mean", ascending=False).reset_index(drop=True)
 
-    st.markdown("### Tabla comparativa global")
+    st.caption(f"Fuente: `{classical_path}`")
+
+    st.markdown("### Tabla comparativa entre algoritmos")
     cols = [c for c in [
-        "model", "feature_set", "category", "pr_auc_mean", "pr_auc_std",
-        "auc_roc_mean", "auc_roc_std", "sensitivity_mean", "specificity_mean",
+        "model", "feature_set", "n_features",
+        "pr_auc_mean", "pr_auc_std",
+        "auc_roc_mean", "auc_roc_std",
+        "sensitivity_mean", "specificity_mean",
     ] if c in df_cmp.columns]
     st.dataframe(
         df_cmp[cols].style.format(
-            {c: "{:.4f}" for c in cols if c not in ("model", "feature_set", "category")}
+            {c: "{:.4f}" for c in cols if c not in ("model", "feature_set", "n_features")}
         ),
         use_container_width=True,
         hide_index=True,
@@ -530,10 +396,7 @@ elif seccion.startswith("5."):
         x=df_plot["label_full"],
         y=df_plot["pr_auc_mean"],
         error_y=dict(type="data", array=df_plot["pr_auc_std"]),
-        marker_color=[
-            "#1f77b4" if c == "Classical ML" else "#d62728"
-            for c in df_plot.get("category", ["Classical ML"] * len(df_plot))
-        ],
+        marker_color="#1f77b4",
         text=[f"{m:.3f}" for m in df_plot["pr_auc_mean"]],
         textposition="outside",
     )
@@ -545,11 +408,11 @@ elif seccion.startswith("5."):
     )
     st.plotly_chart(fig, use_container_width=True)
 
-    # ── Wilcoxon en vivo ──────────────────────────────────────────────────
+    # ── Wilcoxon entre algoritmos clásicos ────────────────────────────────
     st.markdown("### Test estadístico — Wilcoxon signed-rank (PR-AUC por fold)")
     st.caption(
-        "H0: las distribuciones de PR-AUC pareadas por fold son iguales. "
-        "Con 7 folds la potencia es baja — interpretar con cautela."
+        "H0: las distribuciones de PR-AUC pareadas por fold son iguales entre "
+        "algoritmos. Con 7 folds la potencia es baja — interpretar con cautela."
     )
 
     def fold_pr_auc(path: Optional[Path], model_name: str,
@@ -576,16 +439,22 @@ elif seccion.startswith("5."):
                     return series
         return None
 
-    rf_fold = fold_pr_auc(classical_path, "random_forest", "bp_plus_rms_kurt")
-    cnn_fold = fold_pr_auc(cnn_path, "cnn_spectrogram")
-    lstm_fold = fold_pr_auc(lstm_path, "lstm_bilstm")
+    fs = "bp_plus_rms"
+    logreg_fold = fold_pr_auc(classical_path, "logreg", fs)
+    rf_fold     = fold_pr_auc(classical_path, "random_forest", fs)
+    svm_fold    = fold_pr_auc(classical_path, "svm", fs)
+    gb_fold     = fold_pr_auc(classical_path, "gradient_boosting", fs)
+
+    pairs = [
+        ("RandomForest",     rf_fold,    "LogReg",           logreg_fold),
+        ("RandomForest",     rf_fold,    "SVM",              svm_fold),
+        ("RandomForest",     rf_fold,    "GradientBoosting", gb_fold),
+        ("GradientBoosting", gb_fold,    "LogReg",           logreg_fold),
+        ("GradientBoosting", gb_fold,    "SVM",              svm_fold),
+        ("SVM",              svm_fold,   "LogReg",           logreg_fold),
+    ]
 
     rows = []
-    pairs = [
-        ("RandomForest", rf_fold, "CNN_STFT", cnn_fold),
-        ("RandomForest", rf_fold, "BiLSTM", lstm_fold),
-        ("CNN_STFT", cnn_fold, "BiLSTM", lstm_fold),
-    ]
     for la, a, lb, b in pairs:
         if a is None or b is None:
             rows.append({"A": la, "B": lb, "n_folds": 0, "stat": np.nan,
@@ -621,7 +490,7 @@ elif seccion.startswith("5."):
     st.markdown("### Exportar tabla a LaTeX (para tesis)")
     latex_df = df_cmp[cols].copy()
     for c in cols:
-        if c not in ("model", "feature_set", "category"):
+        if c not in ("model", "feature_set", "n_features"):
             latex_df[c] = latex_df[c].map(
                 lambda v: f"{v:.3f}" if pd.notna(v) else "—"
             )

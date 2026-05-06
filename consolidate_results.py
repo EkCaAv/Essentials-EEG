@@ -1,16 +1,14 @@
 """
-consolidate_results.py — Tabla comparativa unificada para tesis.
+consolidate_results.py — Tabla comparativa entre algoritmos de ML clásico.
 
-Lee resultados de modelos clásicos (chbmit_experiments.py) y DL
-(cnn_experiments.py, lstm_experiments.py) y produce:
-  - comparison_table.csv: tabla resumen para incluir en la tesis
-  - Wilcoxon signed-rank test entre el mejor modelo clásico y cada DL
+Línea de investigación: Machine Learning. Lee los resultados producidos por
+chbmit_experiments.py (LogReg, RF, SVM, GradientBoosting) y produce:
+  - comparison_table.csv: tabla resumen para incluir en la tesis.
+  - Wilcoxon signed-rank test pareado por fold entre algoritmos.
 
 Uso:
     python3 consolidate_results.py \\
       --classical_dir ./out_thesis_final/runs/classical_all_models \\
-      --cnn_dir       ./out_thesis_final/cnn_stft \\
-      --lstm_dir      ./out_thesis_final/lstm_raw \\
       --out           ./out_thesis_final/comparison_table.csv \\
       --feature_set   bp_plus_rms
 """
@@ -25,22 +23,11 @@ import pandas as pd
 from scipy import stats
 
 
-CATEGORY_MAP = {
-    "logreg": "Classical ML",
-    "random_forest": "Classical ML",
-    "svm": "Classical ML",
-    "gradient_boosting": "Classical ML",
-    "cnn_spectrogram": "Deep Learning",
-    "lstm_bilstm": "Deep Learning",
-}
-
 INPUT_MAP = {
     "logreg": "Features tabulares (BP+RMS)",
     "random_forest": "Features tabulares (BP+RMS)",
     "svm": "Features tabulares (BP+RMS)",
     "gradient_boosting": "Features tabulares (BP+RMS)",
-    "cnn_spectrogram": "Espectrograma STFT",
-    "lstm_bilstm": "EEG crudo (1280 muestras × 23 ch)",
 }
 
 
@@ -58,17 +45,6 @@ def load_classical(classical_dir: Path, feature_set: str) -> pd.DataFrame:
             f"Disponibles: {available}"
         )
     return df_fs
-
-
-def load_dl(dl_dir: Path) -> pd.DataFrame:
-    """Carga results.csv de un directorio DL."""
-    p = dl_dir / "results.csv"
-    if not p.exists():
-        raise FileNotFoundError(
-            f"No existe: {p}\n"
-            f"Asegúrate de haber ejecutado el script DL antes de consolidar."
-        )
-    return pd.read_csv(p)
 
 
 def load_fold_metrics(results_dir: Path, model_name: str) -> pd.Series:
@@ -102,7 +78,6 @@ def build_comparison_row(df_row: pd.Series) -> dict:
     auc_std = df_row.get("auc_roc_std", float("nan"))
     return {
         "model": model,
-        "category": CATEGORY_MAP.get(model, "Otro"),
         "input_type": INPUT_MAP.get(model, "—"),
         "pr_auc_mean": pr_mean,
         "pr_auc_std": pr_std,
@@ -138,14 +113,10 @@ def wilcoxon_test(a: pd.Series, b: pd.Series, label_a: str, label_b: str) -> Non
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Consolidar resultados ML clásico + DL para tesis"
+        description="Consolidar resultados entre algoritmos de ML clásico para tesis"
     )
     parser.add_argument("--classical_dir", type=str, required=True,
                         help="Directorio del run clásico con results.csv")
-    parser.add_argument("--cnn_dir", type=str, default=None,
-                        help="Directorio de cnn_experiments (opcional)")
-    parser.add_argument("--lstm_dir", type=str, default=None,
-                        help="Directorio de lstm_experiments (opcional)")
     parser.add_argument("--out", type=str,
                         default="./out_thesis_final/comparison_table.csv",
                         help="Ruta del CSV de salida")
@@ -162,28 +133,6 @@ def main():
         rows.append(build_comparison_row(r))
     print(f"  {len(df_cl)} filas cargadas ({', '.join(df_cl['model'].unique())})")
 
-    # ── CNN ────────────────────────────────────────────────────────────────
-    if args.cnn_dir:
-        print(f"[Consolidar] Cargando CNN desde: {args.cnn_dir}")
-        try:
-            df_cnn = load_dl(Path(args.cnn_dir))
-            for _, r in df_cnn.iterrows():
-                rows.append(build_comparison_row(r))
-            print(f"  {len(df_cnn)} filas cargadas")
-        except FileNotFoundError as e:
-            print(f"  [WARN] {e}")
-
-    # ── LSTM ───────────────────────────────────────────────────────────────
-    if args.lstm_dir:
-        print(f"[Consolidar] Cargando LSTM desde: {args.lstm_dir}")
-        try:
-            df_lstm = load_dl(Path(args.lstm_dir))
-            for _, r in df_lstm.iterrows():
-                rows.append(build_comparison_row(r))
-            print(f"  {len(df_lstm)} filas cargadas")
-        except FileNotFoundError as e:
-            print(f"  [WARN] {e}")
-
     # ── Tabla final ────────────────────────────────────────────────────────
     out_path = Path(args.out)
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -194,9 +143,9 @@ def main():
 
     # ── Imprimir tabla resumen ─────────────────────────────────────────────
     print("\n" + "=" * 80)
-    print("TABLA COMPARATIVA (ordenada por PR-AUC ↓)")
+    print("TABLA COMPARATIVA — algoritmos de ML clásico (ordenada por PR-AUC ↓)")
     print("=" * 80)
-    cols = ["model", "category", "pr_auc_str", "auc_roc_str", "sensitivity_mean", "specificity_mean"]
+    cols = ["model", "pr_auc_str", "auc_roc_str", "sensitivity_mean", "specificity_mean"]
     print(df_final[cols].to_string(index=False))
 
     # ── Tests estadísticos (Wilcoxon) ──────────────────────────────────────
@@ -206,26 +155,18 @@ def main():
     print("Nota: con 7 folds la potencia es baja — interpretar con cautela")
     print("-" * 60)
 
-    # Mejor modelo clásico (mayor PR-AUC)
-    classic_models = df_cl["model"].unique().tolist()
-    rf_fold = load_fold_metrics(Path(args.classical_dir), "random_forest")
-    best_classic_fold = rf_fold  # RF como referencia principal
+    classical_dir = Path(args.classical_dir)
+    fold_metrics = {
+        model: load_fold_metrics(classical_dir, model)
+        for model in df_cl["model"].unique()
+    }
 
-    if args.cnn_dir:
-        cnn_fold = load_fold_metrics(Path(args.cnn_dir), "cnn_spectrogram")
-        if len(cnn_fold):
-            wilcoxon_test(best_classic_fold, cnn_fold, "RandomForest", "CNN_STFT")
-
-    if args.lstm_dir:
-        lstm_fold = load_fold_metrics(Path(args.lstm_dir), "lstm_bilstm")
-        if len(lstm_fold):
-            wilcoxon_test(best_classic_fold, lstm_fold, "RandomForest", "BiLSTM")
-
-    if args.cnn_dir and args.lstm_dir:
-        cnn_fold = load_fold_metrics(Path(args.cnn_dir), "cnn_spectrogram")
-        lstm_fold = load_fold_metrics(Path(args.lstm_dir), "lstm_bilstm")
-        if len(cnn_fold) and len(lstm_fold):
-            wilcoxon_test(cnn_fold, lstm_fold, "CNN_STFT", "BiLSTM")
+    classic_models = list(fold_metrics.keys())
+    for i, model_a in enumerate(classic_models):
+        for model_b in classic_models[i + 1:]:
+            a, b = fold_metrics[model_a], fold_metrics[model_b]
+            if len(a) and len(b):
+                wilcoxon_test(a, b, model_a, model_b)
 
     print("\n[Consolidar] Listo.")
 

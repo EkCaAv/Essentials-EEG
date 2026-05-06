@@ -18,9 +18,6 @@ env/
 
 # Documentos y medios
 *.pdf
-*.png
-*.jpg
-*.jpeg
 *.gif
 *.bmp
 *.svg
@@ -40,16 +37,6 @@ Thumbs.db
 data/chb*/
 data/**/*.edf
 data/**/*.edf.seizures
-data/**/*_ictal*.csv
-data/**/*_interictal*.csv
-data/**/*_features*.csv
-
-# Experiment outputs and reports
-out_*/
-out_validation/
-results/
-results_high_spike_thresh/
-results_pediatric_study/
 
 # Local runtime artifacts
 *.pid
