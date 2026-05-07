@@ -20,11 +20,14 @@ from scipy import stats
 _ROOT         = Path(__file__).resolve().parent.parent
 RESULTS_PATH  = _ROOT / "out_thesis_final" / "classical_all_models" / "results.csv"
 FOLD_PATH     = _ROOT / "out_thesis_final" / "classical_all_models" / "cv_fold_metrics.csv"
+WINDOWS_PATH  = _ROOT / "out_thesis_final" / "classical_all_models" / "windows_dataset.csv"
 IMG_DIR       = _ROOT / "out_thesis_final" / "report_images"
 IMG_DIR.mkdir(parents=True, exist_ok=True)
 
 df   = pd.read_csv(RESULTS_PATH)
 fold = pd.read_csv(FOLD_PATH)
+# Conteos reales por sujeto desde el dataset de ventanas (no inventados)
+windows_df = pd.read_csv(WINDOWS_PATH, usecols=["subject_id", "label"])
 
 MDL_ORDER = ["logreg", "random_forest", "svm", "gradient_boosting"]
 FS_ORDER  = ["bp_only", "bp_plus_rms", "bp_plus_rms_kurt", "bp_plus_rms_kurt_skew"]
@@ -65,28 +68,24 @@ axes[0].pie(sizes, explode=explode, labels=labels, colors=colors,
             textprops={"fontsize": 10})
 axes[0].set_title("Distribucion de clases\n(52 244 ventanas totales)", fontweight="bold")
 
-# Ventanas por sujeto
-subj_data = fold.groupby("subject_id")["label"].agg(
-    ictal=lambda x: (x == 1).sum(),
-    interictal=lambda x: (x == 0).sum()
-).reset_index() if "subject_id" in fold.columns else None
+# Ventanas por sujeto (conteos reales del windows_dataset.csv)
+subj_counts = windows_df.groupby("subject_id")["label"].agg(
+    ictal=lambda x: int((x == 1).sum()),
+    interictal=lambda x: int((x == 0).sum()),
+).reset_index().sort_values("subject_id")
 
-if subj_data is None:
-    # fallback: usar fold metrics group
-    counts = {"chb05": (30, 7892), "chb09": (111, 9300), "chb14": (131, 8695),
-              "chb16": (82, 7800), "chb20": (117, 5700), "chb22": (52, 5700), "chb23": (180, 2700)}
-    subjs  = list(counts.keys())
-    ict_c  = [v[0] for v in counts.values()]
-    inter_c= [v[1] for v in counts.values()]
-    x      = np.arange(len(subjs))
-    axes[1].bar(x, inter_c, label="Interictal", color="#AED6F1")
-    axes[1].bar(x, ict_c,   label="Ictal",      color="#E74C3C", bottom=inter_c)
-    axes[1].set_xticks(x)
-    axes[1].set_xticklabels(subjs, fontsize=9)
-    axes[1].set_ylabel("Numero de ventanas")
-    axes[1].set_title("Ventanas por sujeto", fontweight="bold")
-    axes[1].legend(fontsize=9)
-    axes[1].grid(axis="y", alpha=0.3)
+subjs   = subj_counts["subject_id"].tolist()
+ict_c   = subj_counts["ictal"].tolist()
+inter_c = subj_counts["interictal"].tolist()
+x       = np.arange(len(subjs))
+axes[1].bar(x, inter_c, label="Interictal", color="#AED6F1")
+axes[1].bar(x, ict_c,   label="Ictal",      color="#E74C3C", bottom=inter_c)
+axes[1].set_xticks(x)
+axes[1].set_xticklabels(subjs, fontsize=9)
+axes[1].set_ylabel("Numero de ventanas")
+axes[1].set_title("Ventanas por sujeto", fontweight="bold")
+axes[1].legend(fontsize=9)
+axes[1].grid(axis="y", alpha=0.3)
 
 plt.tight_layout()
 fig.savefig(IMG_DIR / "fig_distribucion_clases.pdf", bbox_inches="tight")
@@ -278,30 +277,39 @@ def wilcoxon_matrix(fold_df, fs):
                 mat[i, j] = np.nan
     return mat
 
-fig, axes = plt.subplots(2, 2, figsize=(10, 8))
-fig.suptitle("Tests de Wilcoxon Signed-Rank — p-valores por par de modelos",
-             fontsize=12, fontweight="bold")
+fig, axes = plt.subplots(2, 2, figsize=(10, 8.6))
+fig.suptitle("Tests de Wilcoxon Signed-Rank — p-valores por par de modelos\n"
+             "(matriz triangular inferior; la diagonal corresponde a auto-comparaciones, no aplicable)",
+             fontsize=11, fontweight="bold")
+
+# Colormap con color especial para celdas enmascaradas (gris claro)
+import copy
+cmap_wilcoxon = copy.copy(plt.get_cmap("RdYlGn"))
+cmap_wilcoxon.set_bad(color="#E8E8E8")  # gris claro para diagonal y triangulo superior
+
 for ax, fs in zip(axes.flat, FS_ORDER):
-    mat  = wilcoxon_matrix(fold, fs)
-    mask = np.eye(4, dtype=bool)
+    mat = wilcoxon_matrix(fold, fs)
+    # Mascara: oculta diagonal (k=0) y todo el triangulo superior
+    mask = np.triu(np.ones((4, 4), dtype=bool), k=0)
     disp = np.ma.masked_where(mask, mat)
-    im   = ax.imshow(disp, cmap="RdYlGn", vmin=0, vmax=0.2, aspect="auto")
+    im   = ax.imshow(disp, cmap=cmap_wilcoxon, vmin=0, vmax=0.2, aspect="auto")
     plt.colorbar(im, ax=ax, label="p-valor")
     ax.set_xticks(range(4)); ax.set_xticklabels([MODEL_LABELS[m] for m in MDL_ORDER],
                                                   rotation=18, fontsize=7.5)
     ax.set_yticks(range(4)); ax.set_yticklabels([MODEL_LABELS[m] for m in MDL_ORDER],
                                                   fontsize=7.5)
     ax.set_title(f"Feature set: {fs}", fontsize=9, fontweight="bold")
+    # Solo escribimos texto en el triangulo inferior estricto (i > j)
     for i in range(4):
         for j in range(4):
-            if i == j:
-                ax.text(j, i, "—", ha="center", va="center", fontsize=9, color="gray")
-            else:
-                val = mat[i, j]
-                txt = f"{val:.3f}{'*' if val < 0.05 else ''}" if not np.isnan(val) else "n/a"
-                col = "white" if val < 0.08 else "black"
-                ax.text(j, i, txt, ha="center", va="center", fontsize=7.5, color=col)
-plt.tight_layout()
+            if i <= j:
+                continue  # diagonal y triangulo superior: dejar gris vacio
+            val = mat[i, j]
+            txt = f"{val:.3f}{'*' if val < 0.05 else ''}" if not np.isnan(val) else "n/a"
+            col = "white" if val < 0.08 else "black"
+            ax.text(j, i, txt, ha="center", va="center",
+                    fontsize=7.5, fontweight="bold", color=col)
+plt.tight_layout(rect=[0, 0, 1, 0.96])
 fig.savefig(IMG_DIR / "fig_wilcoxon.pdf", bbox_inches="tight")
 plt.close(fig)
 print("OK fig_wilcoxon.pdf")

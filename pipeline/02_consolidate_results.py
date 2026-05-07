@@ -47,15 +47,21 @@ def load_classical(classical_dir: Path, feature_set: str) -> pd.DataFrame:
     return df_fs
 
 
-def load_fold_metrics(results_dir: Path, model_name: str) -> pd.Series:
-    """Extrae PR-AUC por fold para un modelo dado."""
+def load_fold_metrics(results_dir: Path, model_name: str, feature_set: str) -> pd.Series:
+    """Extrae PR-AUC por fold para un modelo dado, filtrando por feature_set.
+
+    IMPORTANTE: filtrar por feature_set es obligatorio. Sin este filtro, el test
+    de Wilcoxon se computaría sobre folds mezclados de los 4 feature sets, lo que
+    invalida la interpretación como "diferencia entre modelos en este feature set".
+    """
     for candidate in [
         results_dir / "cv_fold_metrics.csv",
         results_dir / "runs",
     ]:
         if candidate.is_file():
             df = pd.read_csv(candidate)
-            subset = df[df["model"] == model_name]["pr_auc"].dropna()
+            subset = df[(df["model"] == model_name)
+                        & (df["feature_set"] == feature_set)]["pr_auc"].dropna()
             return subset.reset_index(drop=True)
         elif candidate.is_dir():
             # buscar el último run en la carpeta runs/
@@ -64,7 +70,8 @@ def load_fold_metrics(results_dir: Path, model_name: str) -> pd.Series:
                 p = run / "cv_fold_metrics.csv"
                 if p.exists():
                     df = pd.read_csv(p)
-                    subset = df[df["model"] == model_name]["pr_auc"].dropna()
+                    subset = df[(df["model"] == model_name)
+                                & (df["feature_set"] == feature_set)]["pr_auc"].dropna()
                     if len(subset):
                         return subset.reset_index(drop=True)
     return pd.Series(dtype=float)
@@ -157,7 +164,7 @@ def main():
 
     classical_dir = Path(args.classical_dir)
     fold_metrics = {
-        model: load_fold_metrics(classical_dir, model)
+        model: load_fold_metrics(classical_dir, model, args.feature_set)
         for model in df_cl["model"].unique()
     }
 
