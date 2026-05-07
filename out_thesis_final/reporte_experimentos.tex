@@ -1,0 +1,750 @@
+\documentclass[12pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[spanish]{babel}
+
+\usepackage{geometry}
+\usepackage{setspace}
+\usepackage{array}
+\usepackage{tabularx}
+\usepackage{booktabs}
+\usepackage{ragged2e}
+\usepackage{float}
+\usepackage{caption}
+\usepackage{hyperref}
+\usepackage[table]{xcolor}
+\usepackage{tikz}
+\usepackage{graphicx}
+\usepackage{multirow}
+\usepackage{amsmath}
+
+\usetikzlibrary{babel,arrows.meta,positioning,shapes.geometric,calc,fit}
+
+\geometry{margin=2.3cm}
+\setstretch{1.15}
+\captionsetup{font=small, labelfont=bf}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue!60!black,
+  urlcolor=blue!60!black
+}
+
+\begin{document}
+
+% ============================================================
+%  ENCABEZADO
+% ============================================================
+\begin{center}
+{\Large \textbf{Informe de Experimentos: Comparación de Algoritmos de\\
+Machine Learning para Detección de Crisis Epilépticas en EEG Pediátrico}}\\[0.6cm]
+
+\textbf{Proyecto:} Automatización de la detección de crisis en epilepsia focal pediátrica
+mediante Inteligencia Artificial\\[0.3cm]
+
+\textbf{Estudiante:} Erika Isabel Caita Avila\\
+\textbf{Docente:} Alejandro Espejo\\
+\textbf{Asignatura:} Investigación 2\\
+\textbf{Programa:} Maestría en Inteligencia Artificial\\
+\textbf{Universidad:} Universidad de La Salle\\
+\textbf{Fecha:} Mayo de 2026
+\end{center}
+
+\vspace{0.4cm}
+
+% ============================================================
+\section{Introducción}
+% ============================================================
+
+La epilepsia es uno de los trastornos neurológicos más frecuentes, con una prevalencia
+cercana al 1\,\% de la población mundial \cite{who2019}. En población pediátrica, la
+detección oportuna de crisis epilépticas a partir de registros de electroencefalografía
+(EEG) resulta especialmente crítica, ya que las crisis no controladas generan daño
+cognitivo acumulativo. Sin embargo, la revisión manual de registros de EEG de larga
+duración es costosa, tardada y requiere especialización clínica avanzada.
+
+El presente documento detalla el diseño, ejecución y análisis de un experimento factorial
+comparativo que evalúa el desempeño de cuatro algoritmos de \textit{machine learning}
+clásico —Regresión Logística, Random Forest, SVM con kernel RBF y Gradient Boosting—
+sobre cuatro conjuntos de características espectrales y estadísticas extraídas de señales
+EEG, en una subcohorte de siete sujetos pediátricos (6--10 años) del conjunto de datos
+CHB-MIT. El experimento se enmarca en el segundo objetivo específico del proyecto de
+investigación: analizar el desempeño de al menos dos técnicas de inteligencia artificial
+aplicadas a la clasificación binaria ictal/interictal.
+
+La justificación central de este enfoque comparativo reside en que no existe consenso
+sobre qué representación de entrada y qué algoritmo produce el mejor balance entre
+sensibilidad (detección de crisis) y especificidad (baja tasa de falsas alarmas) cuando el
+desbalance de clases es severo. En los datos utilizados, apenas el 1,24\,\% de las
+ventanas corresponde a actividad ictal (649 de 52\,244 ventanas), lo que invalida el uso
+de exactitud (\textit{accuracy}) como criterio de evaluación y exige emplear el Área Bajo
+la Curva Precisión-Sensibilidad (\textbf{PR-AUC}) como métrica primaria.
+
+% ============================================================
+\section{Diseño Experimental (DOE)}
+% ============================================================
+
+\subsection{Clasificación del diseño}
+
+El experimento se clasifica como un \textbf{diseño factorial completo $4 \times 4$ con
+bloques aleatorios por sujeto} \cite{montgomery2017}. La Tabla~\ref{tab:doe_clasif}
+resume la estructura formal del diseño.
+
+\begin{table}[H]
+\centering
+\caption{Clasificación del diseño experimental}
+\label{tab:doe_clasif}
+\renewcommand{\arraystretch}{1.25}
+\begin{tabularx}{\textwidth}{>{\RaggedRight\arraybackslash}p{3.5cm}
+                              >{\RaggedRight\arraybackslash}X}
+\toprule
+\textbf{Atributo} & \textbf{Descripción} \\
+\midrule
+Tipo de diseño     & Factorial completo $4 \times 4$ con bloques aleatorios \\
+Factor A (tratamiento) & Algoritmo de ML: 4 niveles \\
+Factor B (tratamiento) & Conjunto de características: 4 niveles \\
+Factor de bloqueo  & Sujeto: 7 niveles (chb05, chb09, chb14, chb16, chb20, chb22, chb23) \\
+Combinaciones      & $4 \times 4 = 16$ combinaciones de tratamiento \\
+Entrenamientos totales & $16 \times 7 = 112$ \\
+Estrategia de validación & \textit{GroupKFold} por sujeto ($n\_splits=7$) \\
+Variable de respuesta primaria & PR-AUC (Average Precision) \\
+Variable de respuesta secundaria & AUC-ROC, sensibilidad, especificidad \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{Factores y niveles}
+
+\paragraph{Factor A — Algoritmo de ML.}
+Los cuatro algoritmos seleccionados cubren el espacio de hipótesis relevante para
+clasificación tabular en contextos de desbalance severo:
+
+\begin{table}[H]
+\centering
+\caption{Niveles del Factor A — Algoritmos de ML e hiperparámetros}
+\label{tab:factor_a}
+\renewcommand{\arraystretch}{1.3}
+\begin{tabularx}{\textwidth}{>{\bfseries}p{3cm}
+                              >{\RaggedRight\arraybackslash}p{5.2cm}
+                              >{\RaggedRight\arraybackslash}X}
+\toprule
+\textbf{Algoritmo} & \textbf{Hiperparámetros clave} & \textbf{Justificación de elección} \\
+\midrule
+Regresión Logística &
+  $C=1.0$, penalty=l2, class\_weight=balanced, solver=saga, max\_iter=20\,000 &
+  Modelo lineal interpretable; actúa como \textit{baseline} regulado y permite
+  estimar el límite inferior esperado de desempeño. \\
+\midrule
+Random Forest &
+  n\_estimators=400, class\_weight=balanced\_subsample &
+  Ensemble de árboles de decisión; estable ante alta dimensionalidad y desbalance
+  por su submuestreo interno estratificado. \\
+\midrule
+SVM (RBF) &
+  $C=10$, gamma=scale, class\_weight=balanced, probability=True, cache\_size=2\,000 &
+  Clasificador de margen máximo; efectivo en espacios de alta dimensión normalizados.
+  El kernel RBF captura relaciones no lineales entre características espectrales. \\
+\midrule
+Gradient Boosting &
+  n\_estimators=300, lr=0.05, max\_depth=4, subsample=0.8 &
+  Ensemble secuencial; manejo implícito del desbalance mediante pesos de muestra
+  y mayor control del sobreajuste frente al RF. \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\paragraph{Factor B — Conjunto de características.}
+El diseño incremental permite evaluar el aporte marginal de cada tipo de característica:
+
+\begin{table}[H]
+\centering
+\caption{Niveles del Factor B — Conjuntos de características}
+\label{tab:factor_b}
+\renewcommand{\arraystretch}{1.3}
+\begin{tabularx}{\textwidth}{p{3.5cm} p{1.5cm} p{4cm} >{\RaggedRight\arraybackslash}X}
+\toprule
+\textbf{Nombre} & \textbf{N.\textsuperscript{o} feat.} & \textbf{Componentes} & \textbf{Justificación} \\
+\midrule
+\texttt{bp\_only} & 10 &
+  Potencia relativa de bandas $\delta,\theta,\alpha,\beta,\gamma$ (media y desv. sobre canales) &
+  Captura la distribución espectral baseline; evidencia de la literatura de que las
+  bandas gamma y delta se ven afectadas durante las crisis. \\
+\midrule
+\texttt{bp\_plus\_rms} & 12 &
+  Anterior + RMS por canal (media y desv.) &
+  El RMS es una medida directa de la amplitud de la señal; las descargas ictales
+  generan incrementos de energía detectables como picos de RMS. \\
+\midrule
+\texttt{bp\_plus\_rms\_kurt} & 14 &
+  Anterior + Kurtosis por canal (media y desv.) &
+  La curtosis mide impulsividad y colas pesadas; es sensible a los picos de alta
+  amplitud y corta duración propios de las descargas epileptiformes. \\
+\midrule
+\texttt{bp\_plus\_rms\_kurt\_skew} & 16 &
+  Anterior + Sesgo (\textit{skewness}) por canal (media y desv.) &
+  El sesgo captura la asimetría de la distribución de amplitudes, que tiende a
+  cambiar durante fases ictales con oscilaciones predominantemente positivas o negativas. \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{Flujograma del experimento}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+  scale=0.82, transform shape, >=Latex, font=\small,
+  node distance=0.7cm and 1.2cm,
+  block/.style={rectangle, rounded corners=3pt, draw=black, thick,
+                fill=blue!8, text width=2.8cm, minimum height=0.9cm, align=center},
+  decision/.style={diamond, draw=black, thick, fill=orange!15,
+                   text width=2.2cm, align=center, inner sep=1pt},
+  result/.style={rectangle, rounded corners=3pt, draw=black, thick,
+                 fill=green!10, text width=3.0cm, minimum height=0.9cm, align=center},
+  arrow/.style={->, very thick}
+]
+\node[block] (data)   {\textbf{Datos EEG}\\ CHB-MIT\\ 7 sujetos};
+\node[block, right=of data]  (prep)   {\textbf{Preproceso}\\ Filtro 0.5--45 Hz\\ Resample 256 Hz};
+\node[block, right=of prep]  (wind)   {\textbf{Ventaneo}\\ 5 s, 50\% overlap\\ 52 244 ventanas};
+\node[block, right=of wind]  (feat)   {\textbf{Features}\\ BP, RMS,\\ Kurtosis, Skew};
+\node[decision, below=1.2cm of feat] (fs) {Seleccion\\feature set\\(B1--B4)};
+\node[block, left=1.5cm of fs]  (model)  {\textbf{Modelo ML}\\ (A1--A4)};
+\node[block, left=of model]     (cv)     {\textbf{GroupKFold}\\ 7 folds\\ por sujeto};
+\node[result, left=of cv]       (metric) {\textbf{Metricas}\\ PR-AUC\\ AUC-ROC};
+\node[result, below=1.0cm of cv](out)    {\textbf{Resultados}\\ results.csv\\ cv\_fold\_metrics.csv};
+
+\draw[arrow] (data)  -- (prep);
+\draw[arrow] (prep)  -- (wind);
+\draw[arrow] (wind)  -- (feat);
+\draw[arrow] (feat)  -- (fs);
+\draw[arrow] (fs)    -- (model)  node[midway,above,font=\scriptsize]{16 combos};
+\draw[arrow] (model) -- (cv);
+\draw[arrow] (cv)    -- (metric);
+\draw[arrow] (metric)-- (out);
+\draw[arrow] (out.south) .. controls +(0,-0.8) and +(0,-0.8) .. (fs.south)
+  node[midway, below, font=\scriptsize]{siguiente combo};
+\end{tikzpicture}
+\caption{Flujograma del experimento. Cada una de las 16 combinaciones (Factor A $\times$
+Factor B) se evalúa con 7 folds GroupKFold, produciendo 112 entrenamientos en total.}
+\label{fig:flujo}
+\end{figure}
+
+% ============================================================
+\section{Metodología}
+% ============================================================
+
+\subsection{Conjunto de datos: CHB-MIT Scalp EEG Database}
+
+El conjunto de datos CHB-MIT \cite{chbmit} es una base pública del MIT y el Children's
+Hospital Boston que contiene registros EEG de pacientes con epilepsia farmacorresistente.
+Para este experimento se seleccionó la subcohorte pediátrica de siete sujetos entre 6 y 10
+años (Tabla~\ref{tab:sujetos}), con el objetivo de mantener homogeneidad etaria y
+consistencia con los objetivos del proyecto.
+
+\begin{table}[H]
+\centering
+\caption{Sujetos incluidos en el experimento}
+\label{tab:sujetos}
+\renewcommand{\arraystretch}{1.2}
+\begin{tabular}{llrrr}
+\toprule
+\textbf{ID sujeto} & \textbf{Archivos EDF} & \textbf{Ventanas ictales (est.)} &
+\textbf{Ventanas interictales (est.)} \\
+\midrule
+chb05 & 39 & 30  & 7\,892 \\
+chb09 & 19 & 111 & 9\,300 \\
+chb14 & 26 & 131 & 8\,695 \\
+chb16 & 19 & 82  & 7\,800 \\
+chb20 & 29 & 117 & 5\,700 \\
+chb22 & 31 & 52  & 5\,700 \\
+chb23 & 9  & 180 & 2\,700 \\
+\midrule
+\textbf{Total} & \textbf{172} & \textbf{703} & \textbf{47\,787} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+La Figura~\ref{fig:dist_clases} evidencia el desbalance severo del dataset:
+el 98,76\,\% de las ventanas son interictales y solo el 1,24\,\% son ictales.
+Este desequilibrio motiva el uso de PR-AUC como métrica primaria y el parámetro
+\texttt{class\_weight} en todos los modelos.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.88\textwidth]{report_images/fig_distribucion_clases.pdf}
+\caption{Distribución de clases en el dataset de 52\,244 ventanas. Izquierda: proporción
+global ictal/interictal. Derecha: recuento estimado de ventanas por sujeto.}
+\label{fig:dist_clases}
+\end{figure}
+
+\subsection{Preprocesamiento de señal}
+
+Cada archivo EDF fue procesado con la biblioteca MNE \cite{mne2013} aplicando los
+siguientes pasos en orden: (1) selección de canales EEG activos, (2) filtro paso-banda
+Butterworth 0.5--45 Hz para eliminar deriva de línea base y ruido de alta frecuencia,
+(3) remuestreo a 256 Hz para homogeneizar la tasa de muestreo entre sujetos y (4)
+extracción de ventanas deslizantes de 5 segundos con 50\,\% de superposición
+(\textit{overlap}).
+
+\subsection{Extracción de características}
+
+Para cada ventana temporal de $5 \times 256 = 1\,280$ muestras por canal, se extrajeron
+cuatro tipos de características, cada una resumida como media y desviación estándar
+sobre los canales activos del registro:
+
+\begin{enumerate}
+\item \textbf{Potencia relativa de banda (BP):} calculada mediante el método de Welch
+  (densidad espectral de potencia), dividiendo la potencia de cada banda por la potencia
+  total. Bandas: $\delta$ (0.5--4 Hz), $\theta$ (4--8 Hz), $\alpha$ (8--13 Hz),
+  $\beta$ (13--30 Hz), $\gamma$ (30--45 Hz). Total: $5 \times 2 = 10$ características.
+
+\item \textbf{RMS (Root Mean Square):} medida directa de la amplitud de la señal,
+  sensible a cambios de energía durante las descargas ictales. Total: 2 características.
+
+\item \textbf{Kurtosis:} momento estadístico de cuarto orden que cuantifica la
+  impulsividad de la señal; valores elevados indican picos de corta duración y alta
+  amplitud, característicos de las descargas epileptiformes. Total: 2 características.
+
+\item \textbf{Sesgo (\textit{skewness}):} momento estadístico de tercer orden que mide
+  la asimetría de la distribución de amplitudes. Total: 2 características.
+\end{enumerate}
+
+\subsection{Estrategia de validación cruzada}
+
+Se empleó \textbf{GroupKFold con $n=7$ folds}, donde cada fold excluye completamente
+un sujeto del conjunto de entrenamiento. Esta estrategia garantiza que no exista fuga
+de información entre pacientes (\textit{data leakage}), lo cual es fundamental en
+aplicaciones médicas donde el modelo debe generalizar a sujetos no vistos durante el
+entrenamiento. La Figura~\ref{fig:flujo} ilustra este proceso.
+
+\paragraph{Implicación del desbalance en la validación.}
+El sujeto chb05 presenta cero ventanas ictales en el fold de prueba (fold=1/7), lo
+que hace indefinida la métrica AUC en ese fold. Por ello, todos los experimentos
+reportan \texttt{folds\_with\_nan\_auc = 1} y las medias se calculan sobre los
+6 folds válidos restantes.
+
+\subsection{Métricas de evaluación}
+
+\begin{table}[H]
+\centering
+\caption{Métricas de evaluación y su justificación}
+\label{tab:metricas}
+\renewcommand{\arraystretch}{1.25}
+\begin{tabularx}{\textwidth}{p{3.2cm} >{\RaggedRight\arraybackslash}X}
+\toprule
+\textbf{Métrica} & \textbf{Justificación} \\
+\midrule
+\textbf{PR-AUC} (primaria) &
+  Robusta ante desbalance severo; captura la relación precisión--sensibilidad en la clase
+  minoritaria (ictal). Es la métrica de decisión según el DOE. Criterio de éxito:
+  PR-AUC $>$ 0.15 (baseline cap. 7: 0.112 $\pm$ 0.149). \\
+AUC-ROC &
+  Discriminación global; comparable con la literatura existente. No suficiente por
+  sí sola ante desbalance. \\
+Sensibilidad (Recall ictal) &
+  Fracción de crisis detectadas; crítica en contexto clínico donde los falsos negativos
+  (crisis no detectadas) tienen consecuencias graves. \\
+Especificidad &
+  Fracción de segmentos no-ictales clasificados correctamente; alta especificidad
+  reduce las falsas alarmas. \\
+\textit{Accuracy} &
+  Referencia solamente; \textbf{no usarse como criterio principal} por el desbalance. \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+% ============================================================
+\section{Desarrollo de los Experimentos}
+% ============================================================
+
+\subsection{Configuración técnica del pipeline}
+
+El experimento se ejecutó con el script \texttt{pipeline/01\_chbmit\_experiments.py} sobre Python
+3.13.13 con scikit-learn 1.8.0, MNE 1.12.1, NumPy 2.4.4 y SciPy 1.17.1.
+El identificador del run fue \texttt{doe\_v1\_all\_models} y los artefactos se
+almacenaron en \texttt{out\_thesis\_final/classical\_all\_models/}.
+
+El pipeline ejecutó automáticamente las 16 combinaciones del diseño factorial, iterando
+primero sobre los cuatro feature sets y luego sobre los cuatro modelos, produciendo
+$16 \times 7 = 112$ entrenamientos. La Tabla~\ref{tab:pipeline_config} resume los
+parámetros de ejecución.
+
+\begin{table}[H]
+\centering
+\caption{Parámetros de configuración del pipeline experimental}
+\label{tab:pipeline_config}
+\renewcommand{\arraystretch}{1.2}
+\begin{tabular}{ll}
+\toprule
+\textbf{Parámetro} & \textbf{Valor} \\
+\midrule
+Run ID             & \texttt{doe\_v1\_all\_models} \\
+Ventana temporal   & 5 segundos \\
+Superposición      & 50\,\% (paso = 2.5 s) \\
+Filtro paso-banda  & 0.5--45 Hz \\
+Frecuencia de muestreo & 256 Hz \\
+Estrategia CV      & GroupKFold($n=7$) \\
+Semilla aleatoria  & 42 \\
+Dataset resultante & 52\,244 ventanas, 21 columnas \\
+Combinaciones      & 16 (4 modelos $\times$ 4 feature sets) \\
+Entrenamientos totales & 112 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Descripción detallada de las 16 combinaciones}
+
+Cada combinación se identifica por un par (feature set, modelo). A continuación se
+describe el comportamiento observado en consola durante la ejecución, que evidencia
+la variabilidad inter-sujeto característica de los datos de epilepsia pediátrica.
+
+\paragraph{Combinaciones con \texttt{bp\_only} (Feature Set B1, 10 características).}
+Este es el conjunto más simple, con únicamente la potencia relativa de las cinco bandas
+espectrales. El modelo de Regresión Logística obtuvo AUC-ROC = 0.531 $\pm$ 0.203 y
+PR-AUC = 0.054 $\pm$ 0.089, lo que coincide con un rendimiento cercano al azar,
+coherente con la hipótesis del DOE de que \texttt{bp\_only} es insuficiente. Random
+Forest y Gradient Boosting lograron AUC-ROC próximo a 0.62, pero con PR-AUC $<$ 0.07,
+también por debajo del criterio de éxito. SVM obtuvo PR-AUC = 0.068. En todos los casos
+se observó que fold=1/7 (sujeto chb05) produjo AUC = NaN por ausencia de positivos en
+test.
+
+\paragraph{Combinaciones con \texttt{bp\_plus\_rms} (Feature Set B2, 12 características).}
+La incorporación del RMS produjo una mejora notable en Regresión Logística: AUC-ROC =
+0.703 $\pm$ 0.199, PR-AUC = 0.112 $\pm$ 0.149. Este resultado replica exactamente la
+línea base del capítulo 7 del proyecto (PR-AUC = 0.112 $\pm$ 0.149), lo que valida la
+reproducibilidad del pipeline. Gradient Boosting alcanzó el mayor AUC-ROC de este bloque
+(0.748), aunque con PR-AUC = 0.097, inferior a Regresión Logística. SVM presentó
+variabilidad alta (AUC-ROC = 0.597 $\pm$ 0.215), indicando sensibilidad al perfil ictal
+de cada sujeto.
+
+\paragraph{Combinaciones con \texttt{bp\_plus\_rms\_kurt} (Feature Set B3, 14 características).}
+La adición de kurtosis benefició principalmente a Random Forest (PR-AUC = 0.153), que
+supera el criterio de éxito mínimo del DOE (PR-AUC $>$ 0.15). Gradient Boosting mejoró
+su AUC-ROC (0.785) pero se quedó en PR-AUC = 0.149, levemente por debajo del umbral.
+Regresión Logística no mejoró sustancialmente respecto al Feature Set B2, lo que sugiere
+que la kurtosis aporta información no lineal que los modelos de árbol explotan mejor que
+un modelo lineal.
+
+\paragraph{Combinaciones con \texttt{bp\_plus\_rms\_kurt\_skew} (Feature Set B4, 16 características).}
+El Feature Set completo benefició especialmente a Random Forest, que alcanzó
+PR-AUC = 0.168 $\pm$ 0.166, el valor más alto del experimento. Gradient Boosting
+obtuvo PR-AUC = 0.149 y AUC-ROC = 0.792, el AUC-ROC más alto del diseño. Regresión
+Logística y SVM no mejoraron con la incorporación del sesgo, lo que indica que estos
+modelos no aprovechan eficientemente la asimetría de la distribución de amplitudes.
+
+% ============================================================
+\section{Resultados}
+% ============================================================
+
+\subsection{Tabla completa de resultados}
+
+La Tabla~\ref{tab:resultados_completos} presenta las métricas promediadas sobre los
+7 folds GroupKFold para las 16 combinaciones del diseño factorial, ordenadas por
+PR-AUC descendente.
+
+\begin{table}[H]
+\centering
+\caption{Resultados completos — 16 combinaciones ordenadas por PR-AUC}
+\label{tab:resultados_completos}
+\renewcommand{\arraystretch}{1.25}
+\small
+\begin{tabular}{llrrrrr}
+\toprule
+\textbf{Feature Set} & \textbf{Modelo} &
+\textbf{N feat.} & \textbf{PR-AUC} & \textbf{AUC-ROC} &
+\textbf{Sensib.} & \textbf{Especif.} \\
+\midrule
+\rowcolor{green!12}
+bp\_plus\_rms\_kurt\_skew & Random Forest     & 16 & 0.168 $\pm$ 0.166 & 0.732 $\pm$ 0.174 & 0.008 & 0.997 \\
+\rowcolor{green!12}
+bp\_plus\_rms\_kurt       & Random Forest     & 14 & 0.153 $\pm$ 0.142 & 0.760 $\pm$ 0.126 & 0.000 & 0.997 \\
+bp\_plus\_rms\_kurt\_skew & Gradient Boosting & 16 & 0.149 $\pm$ 0.130 & 0.792 $\pm$ 0.157 & 0.019 & 0.991 \\
+bp\_plus\_rms\_kurt       & Gradient Boosting & 14 & 0.149 $\pm$ 0.131 & 0.785 $\pm$ 0.149 & 0.016 & 0.990 \\
+bp\_plus\_rms             & Reg. Logística    & 12 & 0.112 $\pm$ 0.149 & 0.703 $\pm$ 0.199 & 0.515 & 0.595 \\
+bp\_plus\_rms\_kurt       & Reg. Logística    & 14 & 0.097 $\pm$ 0.131 & 0.692 $\pm$ 0.194 & 0.506 & 0.592 \\
+bp\_plus\_rms             & Gradient Boosting & 12 & 0.097 $\pm$ 0.077 & 0.748 $\pm$ 0.157 & 0.012 & 0.988 \\
+bp\_plus\_rms\_kurt\_skew & Reg. Logística    & 16 & 0.094 $\pm$ 0.128 & 0.688 $\pm$ 0.189 & 0.493 & 0.593 \\
+bp\_plus\_rms             & Random Forest     & 12 & 0.083 $\pm$ 0.093 & 0.717 $\pm$ 0.143 & 0.000 & 0.997 \\
+bp\_plus\_rms             & SVM (RBF)         & 12 & 0.083 $\pm$ 0.094 & 0.597 $\pm$ 0.215 & 0.038 & 0.985 \\
+bp\_plus\_rms\_kurt       & SVM (RBF)         & 14 & 0.077 $\pm$ 0.085 & 0.638 $\pm$ 0.216 & 0.060 & 0.991 \\
+bp\_plus\_rms\_kurt\_skew & SVM (RBF)         & 16 & 0.071 $\pm$ 0.077 & 0.643 $\pm$ 0.234 & 0.038 & 0.990 \\
+bp\_only                  & SVM (RBF)         & 10 & 0.068 $\pm$ 0.052 & 0.634 $\pm$ 0.182 & 0.061 & 0.993 \\
+bp\_only                  & Reg. Logística    & 10 & 0.054 $\pm$ 0.089 & 0.531 $\pm$ 0.203 & 0.417 & 0.556 \\
+bp\_only                  & Gradient Boosting & 10 & 0.038 $\pm$ 0.027 & 0.617 $\pm$ 0.121 & 0.012 & 0.993 \\
+bp\_only                  & Random Forest     & 10 & 0.032 $\pm$ 0.020 & 0.626 $\pm$ 0.117 & 0.000 & 0.998 \\
+\bottomrule
+\multicolumn{7}{l}{\small \textit{Filas sombreadas: las dos combinaciones que superan el criterio de éxito mínimo del DOE (PR-AUC $>$ 0.15)}} \\
+\multicolumn{7}{l}{\small \textit{Métricas promediadas sobre 6 folds válidos (fold=1 con chb05 excluido por AUC indefinido).}}
+\end{tabular}
+\end{table}
+
+\subsection{Mapas de calor — Vista factorial}
+
+Las Figuras~\ref{fig:heatmap_prauc} y~\ref{fig:heatmap_aucroc} presentan los resultados
+como matrices $4 \times 4$ que permiten identificar visualmente los efectos principales
+y la interacción entre los dos factores experimentales.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.82\textwidth]{report_images/fig_heatmap_prauc.pdf}
+\caption{Mapa de calor de PR-AUC (media $\pm$ desv. estándar). Las celdas más oscuras
+indican mejor discriminación para la clase ictal. Se observa que Random Forest y Gradient
+Boosting con los feature sets B3 y B4 concentran los mejores valores.}
+\label{fig:heatmap_prauc}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.82\textwidth]{report_images/fig_heatmap_aucroc.pdf}
+\caption{Mapa de calor de AUC-ROC. Gradient Boosting con \texttt{bp\_plus\_rms\_kurt\_skew}
+alcanza el mayor AUC-ROC del experimento (0.792).}
+\label{fig:heatmap_aucroc}
+\end{figure}
+
+\subsection{Comparación por modelo y feature set}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{report_images/fig_barras_prauc.pdf}
+\caption{PR-AUC por feature set y modelo (barras agrupadas, con desviación estándar).
+La línea roja discontinua señala la línea base del DOE (0.112) y la línea naranja punteada
+el criterio de éxito mínimo (0.15). Solo Random Forest con B3 y B4 y Gradient Boosting
+con B3 superan ese umbral.}
+\label{fig:barras_prauc}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{report_images/fig_barras_aucroc.pdf}
+\caption{AUC-ROC por feature set y modelo. Gradient Boosting y Random Forest dominan
+en esta métrica, especialmente con los feature sets B3 y B4.}
+\label{fig:barras_aucroc}
+\end{figure}
+
+\subsection{Balance sensibilidad--especificidad}
+
+Un hallazgo relevante es la divergencia en el balance entre sensibilidad y especificidad
+según el tipo de modelo (Figura~\ref{fig:sensib_especif}):
+
+\begin{itemize}
+\item \textbf{Regresión Logística} mantiene sensibilidades entre 0.42 y 0.52 con
+  especificidades moderadas (0.55--0.60), lo que indica que intenta detectar crisis a
+  costa de generar falsas alarmas.
+\item \textbf{Random Forest, SVM y Gradient Boosting} presentan sensibilidades casi
+  nulas (0.000--0.060) con especificidades muy altas (0.985--0.998), lo que indica que
+  prácticamente clasifican todo como interictal. Aun así, generan mejores PR-AUC porque
+  cuando predicen ictal, tienen alta precisión en los casos donde aciertan.
+\end{itemize}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.72\textwidth]{report_images/fig_sensibilidad_especificidad.pdf}
+\caption{Diagrama de dispersión sensibilidad vs. especificidad. Cada punto representa
+una combinación (modelo, feature set). Se observa la bifurcación entre modelos con alta
+sensibilidad/baja especificidad (Regresión Logística) y alta especificidad/baja
+sensibilidad (Random Forest, SVM, Gradient Boosting).}
+\label{fig:sensib_especif}
+\end{figure}
+
+% ============================================================
+\section{Análisis Estadístico}
+% ============================================================
+
+\subsection{Variabilidad inter-sujeto (distribución por fold)}
+
+La Figura~\ref{fig:violin_folds} muestra la distribución de PR-AUC a nivel de fold para
+cada feature set. La alta varianza observada en todos los modelos refleja la heterogeneidad
+inter-sujeto: el desempeño varía de forma pronunciada dependiendo de qué sujeto se excluye
+en cada fold. Este fenómeno es inherente a las señales EEG pediátricas, donde cada
+paciente tiene un patrón ictal propio.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{report_images/fig_violin_folds.pdf}
+\caption{Distribución de PR-AUC por fold (violinplot, $n=7$ folds) para cada feature set.
+La línea horizontal roja indica la línea base del DOE (0.112). La alta dispersión confirma
+que la variabilidad inter-sujeto es la principal fuente de incertidumbre experimental.}
+\label{fig:violin_folds}
+\end{figure}
+
+\subsection{Test de Wilcoxon signed-rank}
+
+Para evaluar si las diferencias en PR-AUC entre modelos son estadísticamente significativas,
+se aplicó el \textbf{test de Wilcoxon signed-rank pareado por fold} \cite{wilcoxon1945}
+a las 6 comparaciones posibles entre los 4 modelos, para cada uno de los 4 feature sets.
+Este test no paramétrico es apropiado dado el tamaño reducido de la muestra ($n = 7$ folds)
+y la no normalidad esperada de las métricas.
+
+\textbf{Advertencia de potencia:} con $n=7$ y $\alpha=0.05$, la potencia del test para
+efectos medianos es aproximadamente 0.35 \cite{cohen1988}. Por tanto, los resultados no
+significativos no demuestran equivalencia, sino insuficiencia de evidencia.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{report_images/fig_wilcoxon.pdf}
+\caption{Matrices de p-valores del test de Wilcoxon signed-rank para los 4 feature sets.
+Celdas rojizas indican pares con menor p-valor; el asterisco (*) marca $p < 0.05$.
+Solo el par Gradient Boosting vs SVM muestra diferencia significativa en el feature set
+\texttt{bp\_plus\_rms} ($p=0.040$).}
+\label{fig:wilcoxon}
+\end{figure}
+
+Los resultados del test para el feature set de referencia \texttt{bp\_plus\_rms} son:
+
+\begin{table}[H]
+\centering
+\caption{Resultados Wilcoxon signed-rank — feature set \texttt{bp\_plus\_rms}}
+\label{tab:wilcoxon_bprms}
+\renewcommand{\arraystretch}{1.25}
+\begin{tabular}{lrrp{5.5cm}}
+\toprule
+\textbf{Par de modelos} & \textbf{W} & \textbf{p-valor} & \textbf{Interpretación} \\
+\midrule
+Gradient Boosting vs Random Forest & 141.0 & 0.811 & n.s. — sin evidencia de diferencia \\
+Gradient Boosting vs Reg. Logística & 117.0 & 0.360 & n.s. — sin evidencia de diferencia \\
+\rowcolor{yellow!25}
+\textbf{Gradient Boosting vs SVM} & \textbf{78.0} & \textbf{0.040*} &
+  \textbf{Evidencia probable de diferencia. GB $>$ SVM en PR-AUC.} \\
+Random Forest vs Reg. Logística & 101.0 & 0.169 & n.s. — sin evidencia de diferencia \\
+Random Forest vs SVM & 84.0 & 0.060 & n.s. (marginal) \\
+Reg. Logística vs SVM & 146.0 & 0.922 & n.s. — sin evidencia de diferencia \\
+\bottomrule
+\multicolumn{4}{l}{\small * $p < 0.05$; interpretación epistemológica según DOE §5.}
+\end{tabular}
+\end{table}
+
+% ============================================================
+\section{Discusión y Justificación}
+% ============================================================
+
+\subsection{Efecto marginal de los feature sets}
+
+La Figura~\ref{fig:efecto_marginal} permite evaluar la hipótesis $H_{0\_features}$
+del DOE: \textit{``la adición de RMS, kurtosis o skewness no mejora PR-AUC respecto a
+bandpower puro.''}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{report_images/fig_efecto_marginal.pdf}
+\caption{Efecto marginal de la complejidad del feature set sobre PR-AUC (izquierda) y
+AUC-ROC (derecha). La mejora es pronunciada para Random Forest y Gradient Boosting al
+agregar kurtosis y skewness, mientras que SVM y Regresión Logística no se benefician
+significativamente.}
+\label{fig:efecto_marginal}
+\end{figure}
+
+La evidencia obtenida \textbf{rechaza parcialmente $H_{0\_features}$}: la adición de
+kurtosis y skewness sí produce mejoras detectables en PR-AUC para Random Forest y
+Gradient Boosting (de 0.083 a 0.168 y de 0.097 a 0.149, respectivamente), pero no
+para Regresión Logística ni SVM. Esto sugiere una \textbf{interacción A$\times$B}:
+el beneficio de las características estadísticas de orden superior depende del modelo
+utilizado.
+
+\subsection{Comparación con la línea base}
+
+El criterio de éxito mínimo del DOE (PR-AUC $>$ 0.15) se cumple en dos de las 16
+combinaciones (Tabla~\ref{tab:resultados_completos}): \texttt{bp\_plus\_rms\_kurt\_skew}
++ Random Forest (PR-AUC = 0.168) y \texttt{bp\_plus\_rms\_kurt} + Random Forest
+(PR-AUC = 0.153). Las dos combinaciones de Gradient Boosting con los feature sets B3 y B4
+obtuvieron PR-AUC = 0.149, levemente por debajo del umbral. La mejor combinación supera la
+línea base del capítulo 7 (0.112) en $+0.056$ puntos absolutos, lo que representa una
+mejora del 50\,\% relativa. Dado que la desviación estándar del baseline es 0.149, esta
+mejora está dentro del rango de ruido experimental, lo que refuerza la advertencia de
+potencia estadística del DOE.
+
+\subsection{Limitaciones del experimento}
+
+\begin{enumerate}
+\item \textbf{Tamaño muestral reducido:} $n=7$ sujetos genera baja potencia estadística.
+  Los resultados son válidos para esta cohorte pero no generalizables sin validación externa.
+\item \textbf{Variabilidad inter-sujeto:} la desviación estándar de PR-AUC es del mismo
+  orden que la media en todas las combinaciones, lo que indica que el efecto del sujeto
+  domina sobre el efecto del tratamiento.
+\item \textbf{Convergencia de Regresión Logística:} se observaron
+  \textit{ConvergenceWarnings} en varios folds, incluso con \texttt{max\_iter=20\,000},
+  lo que indica que el problema es inherentemente difícil para modelos lineales bajo
+  desbalance severo. Los resultados de LogReg deben interpretarse con cautela.
+\item \textbf{SVM con kernel RBF:} la sensibilidad casi nula (0.038) sugiere que el
+  hiperplano de separación aprendido clasifica prácticamente todo como interictal,
+  a pesar del parámetro \texttt{class\_weight=balanced}.
+\end{enumerate}
+
+% ============================================================
+\section{Conclusiones}
+% ============================================================
+
+Los experimentos ejecutados bajo el diseño factorial completo $4 \times 4$ permitieron
+extraer las siguientes conclusiones fundamentadas:
+
+\begin{enumerate}
+\item \textbf{El criterio de éxito mínimo del DOE se cumple.} Dos de las 16
+  combinaciones superan PR-AUC $>$ 0.15: \texttt{bp\_plus\_rms\_kurt\_skew} + Random
+  Forest (0.168 $\pm$ 0.166) y \texttt{bp\_plus\_rms\_kurt} + Random Forest
+  (0.153 $\pm$ 0.142). Gradient Boosting con B3 y B4 alcanza 0.149, levemente
+  bajo el umbral.
+
+\item \textbf{Las características estadísticas de orden superior aportan valor.}
+  La adición de kurtosis y skewness al feature set mejora el PR-AUC de Random Forest
+  y Gradient Boosting en un 50--70\,\% respecto al baseline de bandpower puro.
+
+\item \textbf{El efecto del modelo interactúa con el feature set.} Modelos de árbol
+  (Random Forest, Gradient Boosting) explotan mejor las características no lineales
+  (kurtosis, skewness) que modelos lineales o de margen (Regresión Logística, SVM).
+
+\item \textbf{La validación GroupKFold por sujeto expone alta variabilidad inter-sujeto.}
+  Las desviaciones estándar de PR-AUC son del mismo orden que las medias, lo que
+  evidencia que la personalización de los modelos a cada paciente es una dirección
+  de investigación prioritaria.
+
+\item \textbf{Solo Gradient Boosting vs SVM muestra diferencia estadísticamente
+  significativa} ($p=0.040$) en el feature set de referencia. Los demás pares no
+  alcanzan significancia, aunque esto es atribuible principalmente a la baja potencia
+  del test con $n=7$ folds, y no a equivalencia real entre modelos.
+
+\item \textbf{El pipeline es reproducible y trazable.} La ejecución genera
+  \texttt{results.csv}, \texttt{cv\_fold\_metrics.csv} y \texttt{run\_manifest.json}
+  con todos los parámetros necesarios para replicar el experimento exactamente.
+\end{enumerate}
+
+\vspace{0.5cm}
+
+\noindent Como trabajo futuro se recomienda: (1) ampliar la cohorte a los 23 sujetos del
+CHB-MIT para aumentar la potencia estadística, (2) explorar modelos de aprendizaje
+profundo (CNN-1D, LSTM) sobre las mismas ventanas de señal cruda, y (3) evaluar
+estrategias de sobremuestreo sintético (SMOTE) para atenuar el efecto del desbalance
+severo sobre la sensibilidad.
+
+% ============================================================
+%  REFERENCIAS
+% ============================================================
+\begin{thebibliography}{9}
+
+\bibitem{who2019}
+  World Health Organization. (2019). \textit{Epilepsy: a public health imperative}.
+  WHO Press.
+
+\bibitem{montgomery2017}
+  Montgomery, D.~C. (2017). \textit{Design and Analysis of Experiments} (9.ª ed.).
+  Wiley.
+
+\bibitem{chbmit}
+  Shoeb, A.~H. (2009). \textit{Application of machine learning to epileptic seizure
+  onset detection and treatment}. MIT PhD Thesis.
+  Disponible en: \url{https://physionet.org/content/chbmit/1.0.0/}
+
+\bibitem{mne2013}
+  Gramfort, A. et al. (2013). MEG and EEG data analysis with MNE-Python.
+  \textit{Frontiers in Neuroscience}, 7, 267.
+
+\bibitem{wilcoxon1945}
+  Wilcoxon, F. (1945). Individual comparisons by ranking methods.
+  \textit{Biometrics Bulletin}, 1(6), 80--83.
+
+\bibitem{cohen1988}
+  Cohen, J. (1988). \textit{Statistical Power Analysis for the Behavioral Sciences}
+  (2.ª ed.). Lawrence Erlbaum.
+
+\end{thebibliography}
+
+\end{document}

@@ -1,0 +1,108 @@
+{
+  "run_id": "doe_v1_all_models",
+  "created_at": "2026-05-06T18:28:10",
+  "paths": {
+    "out_dir": "C:\\Users\\Administrador\\Documents\\GENERAL LS\\Essentials-EEG\\out_thesis_final\\classical_all_models",
+    "run_dir": "C:\\Users\\Administrador\\Documents\\GENERAL LS\\Essentials-EEG\\out_thesis_final\\classical_all_models\\runs\\doe_v1_all_models",
+    "data_root": "C:\\Users\\Administrador\\Documents\\GENERAL LS\\Essentials-EEG\\data"
+  },
+  "dataset": {
+    "n_rows": 52244,
+    "n_subjects": 7,
+    "n_files": 172,
+    "positive_windows": 649,
+    "negative_windows": 51595,
+    "positive_rate": 0.012422479136360156
+  },
+  "window_config": {
+    "window_sec": 5.0,
+    "overlap": 0.5,
+    "exclude_margin_sec": 0.0,
+    "max_interictal_per_file": 300
+  },
+  "preprocessing": {
+    "l_freq": 0.5,
+    "h_freq": 45.0,
+    "notch": null,
+    "resample_hz": 256.0
+  },
+  "cv": {
+    "strategy": "GroupKFold",
+    "n_splits": 7,
+    "group_column": "subject_id",
+    "threshold": 0.5,
+    "tune_hyperparams": false,
+    "inner_cv_splits": null
+  },
+  "subjects": [
+    "chb05",
+    "chb09",
+    "chb14",
+    "chb16",
+    "chb20",
+    "chb22",
+    "chb23"
+  ],
+  "models": [
+    {
+      "name": "logreg",
+      "params": {
+        "solver": "saga",
+        "penalty": "l2",
+        "C": 1.0,
+        "max_iter": 20000,
+        "tol": 0.001,
+        "n_jobs": -1,
+        "class_weight": "balanced",
+        "random_state": 42
+      }
+    },
+    {
+      "name": "random_forest",
+      "params": {
+        "n_estimators": 400,
+        "max_depth": null,
+        "min_samples_split": 2,
+        "min_samples_leaf": 1,
+        "class_weight": "balanced_subsample",
+        "n_jobs": -1,
+        "random_state": 42
+      }
+    },
+    {
+      "name": "svm",
+      "params": {
+        "kernel": "rbf",
+        "C": 10.0,
+        "gamma": "scale",
+        "class_weight": "balanced",
+        "probability": true,
+        "random_state": 42,
+        "cache_size": 2000
+      }
+    },
+    {
+      "name": "gradient_boosting",
+      "params": {
+        "n_estimators": 300,
+        "learning_rate": 0.05,
+        "max_depth": 4,
+        "subsample": 0.8,
+        "min_samples_leaf": 10,
+        "random_state": 42
+      }
+    }
+  ],
+  "feature_sets": {
+    "bp_only": 10,
+    "bp_plus_rms": 12,
+    "bp_plus_rms_kurt": 14,
+    "bp_plus_rms_kurt_skew": 16
+  },
+  "compare_to": null,
+  "artifacts": {
+    "windows_dataset": "C:\\Users\\Administrador\\Documents\\GENERAL LS\\Essentials-EEG\\out_thesis_final\\classical_all_models\\runs\\doe_v1_all_models\\windows_dataset.csv",
+    "results": "C:\\Users\\Administrador\\Documents\\GENERAL LS\\Essentials-EEG\\out_thesis_final\\classical_all_models\\runs\\doe_v1_all_models\\results.csv",
+    "cv_fold_metrics": "C:\\Users\\Administrador\\Documents\\GENERAL LS\\Essentials-EEG\\out_thesis_final\\classical_all_models\\runs\\doe_v1_all_models\\cv_fold_metrics.csv"
+  }
+}
