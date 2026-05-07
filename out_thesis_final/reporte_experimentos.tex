@@ -393,6 +393,15 @@ que hace indefinida la métrica AUC en ese fold. Por ello, todos los experimento
 reportan \texttt{folds\_with\_nan\_auc = 1} y las medias se calculan sobre los
 6 folds válidos restantes.
 
+\paragraph{Regla de oro train/test.}
+Todas las métricas reportadas en este informe
+(Tablas~\ref{tab:resultados_completos} y~\ref{tab:wilcoxon_bprms}, y todas las
+figuras de resultados) corresponden \textbf{exclusivamente} a las predicciones
+sobre el fold de test de cada iteración \textit{GroupKFold}. Las métricas de
+entrenamiento no se reportan: se utilizan únicamente como diagnóstico interno
+de sobreajuste. Esta convención garantiza que ninguna cifra publicada esté
+contaminada por información del fold de test durante el ajuste.
+
 \subsection{Métricas de evaluación}
 
 \begin{table}[H]
@@ -437,7 +446,11 @@ almacenaron en \texttt{out\_thesis\_final/classical\_all\_models/}.
 El pipeline ejecutó automáticamente las 16 combinaciones del diseño factorial, iterando
 primero sobre los cuatro feature sets y luego sobre los cuatro modelos, produciendo
 $16 \times 7 = 112$ entrenamientos. La Tabla~\ref{tab:pipeline_config} resume los
-parámetros de ejecución.
+parámetros de ejecución. Los hiperparámetros de cada modelo (Tabla~\ref{tab:factor_a})
+se fijaron \textit{a priori}; \textbf{no se realizó búsqueda anidada de hiperparámetros}
+en este run (\texttt{tune\_hyperparams=false} en el manifiesto), por lo que el fold
+de test nunca participa en su selección y se preserva la independencia entre el
+ajuste del modelo y la evaluación.
 
 \paragraph{Justificación de parámetros operativos.}
 Dos parámetros del pipeline merecen mención explícita por su impacto sobre el análisis:
@@ -730,6 +743,39 @@ sensibilidad (Random Forest, SVM, Gradient Boosting).}
 \section{Análisis Estadístico}
 % ============================================================
 
+Antes de presentar los contrastes, conviene formalizar la distinción entre
+\textbf{población objetivo}, \textbf{muestra disponible} y \textbf{representatividad},
+ya que toda inferencia se interpreta a la luz de estos tres elementos.
+
+\begin{table}[H]
+\centering
+\caption{Población, muestra y representatividad del experimento}
+\label{tab:poblacion_muestra}
+\renewcommand{\arraystretch}{1.25}
+\begin{tabularx}{\textwidth}{>{\bfseries}p{3.2cm} >{\RaggedRight\arraybackslash}X}
+\toprule
+\textbf{Elemento} & \textbf{Descripción} \\
+\midrule
+Población objetivo &
+  Niños con epilepsia focal de 6--10 años con registros EEG disponibles. \\
+\midrule
+Muestra disponible &
+  7 sujetos del CHB-MIT en el rango de edad
+  (chb05, chb09, chb14, chb16, chb20, chb22, chb23). \\
+\midrule
+Sesgo de muestra &
+  La cohorte CHB-MIT presenta un 80\,\% de sujetos femeninos y una distribución
+  bimodal de edades (predominantemente 2--4 años y 10--14 años); la subcohorte
+  pediátrica seleccionada hereda este sesgo. \\
+\midrule
+Representatividad &
+  \textbf{Limitada}: los hallazgos son válidos para esta cohorte. La generalización
+  a la población objetivo requiere validación externa con sujetos no incluidos en
+  CHB-MIT. \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
 \subsection{Variabilidad inter-sujeto (distribución por fold)}
 
 La Figura~\ref{fig:violin_folds} muestra la distribución de PR-AUC a nivel de fold para
@@ -756,10 +802,33 @@ Este test no paramétrico es apropiado dado el tamaño reducido de la muestra
 (efectivamente $n = 6$ folds válidos, ya que el fold con chb05 produce AUC indefinido
 y se excluye del test) y la no normalidad esperada de las métricas.
 
-\textbf{Advertencia de potencia:} con $n=6$ folds y $\alpha=0.05$, la potencia del
-test de Wilcoxon para efectos medianos es aproximadamente 0.30--0.35 \cite{cohen1988}.
-Por tanto, los resultados no significativos no demuestran equivalencia, sino
-insuficiencia de evidencia.
+\paragraph{Hipótesis pareadas.}
+Para cada par de modelos $(i, j)$ con $i \neq j$ se contrastan, sobre los $n=6$ folds
+válidos del feature set bajo análisis:
+\begin{itemize}
+\item $H_{0_{ij}}$: las distribuciones de PR-AUC por fold de los modelos $i$ y $j$
+  son \textit{posiblemente} equivalentes (la mediana de las diferencias pareadas es
+  cero).
+\item $H_{1_{ij}}$: existe evidencia \textit{probable} de diferencia sistemática entre
+  $i$ y $j$ a través de los sujetos evaluados.
+\end{itemize}
+La decisión se basa en el estadístico $W$ de Wilcoxon (suma mínima de rangos con
+signo) y el $p$-valor exacto, con umbral $\alpha = 0.05$.
+
+\paragraph{Advertencia de potencia y errores estadísticos.}
+Con $n=6$ folds y $\alpha=0.05$, la potencia del test de Wilcoxon para efectos
+medianos es aproximadamente 0.30--0.35 \cite{cohen1988}. Por tanto, los resultados
+no significativos no demuestran equivalencia, sino \textbf{insuficiencia de evidencia}.
+Bajo este tamaño muestral, el experimento acepta deliberadamente un riesgo de
+\textbf{Error Tipo II} ($\beta$) elevado a cambio de mantener acotado el riesgo de
+\textbf{Error Tipo I} ($\alpha=0.05$): un falso positivo —declarar superior a un
+modelo cuando no lo es— se considera más costoso que un falso negativo en este
+contexto exploratorio. Para complementar el $p$-valor, la Tabla~\ref{tab:wilcoxon_bprms}
+reporta también el \textbf{tamaño del efecto rank-biserial} $|r| = |W^{+} - W^{-}| /
+\binom{n+1}{2}$, donde $W^{+}$ y $W^{-}$ son las sumas de rangos con signo positivo
+y negativo respectivamente. Por convención \cite{cohen1988}: $|r| < 0.1$ efecto
+trivial, $0.1 \leq |r| < 0.3$ pequeño, $0.3 \leq |r| < 0.5$ mediano, $|r| \geq 0.5$
+grande.
 
 \begin{figure}[H]
 \centering
@@ -782,19 +851,20 @@ Los resultados del test para el feature set de referencia \texttt{bp\_plus\_rms}
 \caption{Resultados Wilcoxon signed-rank — feature set \texttt{bp\_plus\_rms}}
 \label{tab:wilcoxon_bprms}
 \renewcommand{\arraystretch}{1.25}
-\begin{tabular}{lrrp{5.5cm}}
+\begin{tabular}{lrrrp{4.4cm}}
 \toprule
-\textbf{Par de modelos} & \textbf{W} & \textbf{p-valor} & \textbf{Interpretación} \\
+\textbf{Par de modelos} & \textbf{W} & \textbf{p-valor} & \textbf{$|r|$} & \textbf{Interpretación} \\
 \midrule
-Gradient Boosting vs Random Forest & 6.0  & 0.4375 & n.s. — sin evidencia de diferencia \\
-Gradient Boosting vs Reg. Logística & 10.0 & 1.0000 & n.s. — distribuciones equivalentes en rango \\
-Gradient Boosting vs SVM            & 6.0  & 0.4375 & n.s. — sin evidencia de diferencia \\
-Random Forest vs Reg. Logística     & 10.0 & 1.0000 & n.s. — distribuciones equivalentes en rango \\
-Random Forest vs SVM                & 10.0 & 1.0000 & n.s. — distribuciones equivalentes en rango \\
-Reg. Logística vs SVM               & 8.0  & 0.6875 & n.s. — sin evidencia de diferencia \\
+Gradient Boosting vs Random Forest  & 6.0  & 0.4375 & 0.429 & n.s.; efecto mediano no resuelto por la potencia \\
+Gradient Boosting vs Reg. Logística & 10.0 & 1.0000 & 0.048 & n.s.; efecto trivial \\
+Gradient Boosting vs SVM            & 6.0  & 0.4375 & 0.429 & n.s.; efecto mediano no resuelto por la potencia \\
+Random Forest vs Reg. Logística     & 10.0 & 1.0000 & 0.048 & n.s.; efecto trivial \\
+Random Forest vs SVM                & 10.0 & 1.0000 & 0.048 & n.s.; efecto trivial \\
+Reg. Logística vs SVM               & 8.0  & 0.6875 & 0.238 & n.s.; efecto pequeño \\
 \bottomrule
-\multicolumn{4}{l}{\small Test computado sobre los 6 folds válidos de \texttt{bp\_plus\_rms} (chb05 excluido por AUC indefinido).} \\
-\multicolumn{4}{l}{\small Ningún par alcanza $p < 0.05$; interpretación epistemológica según §6.2 (advertencia de potencia).}
+\multicolumn{5}{l}{\small Test computado sobre los 6 folds válidos de \texttt{bp\_plus\_rms} (chb05 excluido por AUC indefinido).} \\
+\multicolumn{5}{l}{\small $|r|$ = tamaño del efecto rank-biserial; convención Cohen: trivial $<$0.1, pequeño 0.1--0.3, mediano 0.3--0.5.} \\
+\multicolumn{5}{l}{\small Ningún par alcanza $p < 0.05$; interpretación epistemológica según §6.2 (advertencia de potencia).}
 \end{tabular}
 \end{table}
 
