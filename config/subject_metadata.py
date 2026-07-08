@@ -33,29 +33,34 @@ SUBJECTS_DB = {
 }
 
 
-def get_subjects(max_age: float = None, min_age: float = None, group: str = None):
+def get_subjects(max_age: float = None, min_age: float = None,
+                 group: str = None, sex: str = None):
     """
     Obtiene lista de sujetos con filtros opcionales.
-    
+
     Args:
         max_age: Edad máxima (inclusive con <)
         min_age: Edad mínima (inclusive)
         group: Filtrar por grupo ('pediatric', 'adolescent', 'adult')
-    
+        sex: Filtrar por sexo ('F', 'M'). None = ambos.
+
     Returns:
         Lista ordenada de subject_ids
     """
     subjects = list(SUBJECTS_DB.keys())
-    
+
     if max_age is not None:
         subjects = [s for s in subjects if SUBJECTS_DB[s]["age"] < max_age]
-    
+
     if min_age is not None:
         subjects = [s for s in subjects if SUBJECTS_DB[s]["age"] >= min_age]
-    
+
     if group is not None:
         subjects = [s for s in subjects if SUBJECTS_DB[s]["group"] == group]
-    
+
+    if sex is not None:
+        subjects = [s for s in subjects if SUBJECTS_DB[s]["gender"] == sex]
+
     return sorted(subjects)
 
 

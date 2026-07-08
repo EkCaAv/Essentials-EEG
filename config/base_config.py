@@ -29,6 +29,20 @@ class BandDefinitions:
             "gamma": self.gamma
         }
 
+    @classmethod
+    def from_profile(cls, profile_name: str) -> "BandDefinitions":
+        """
+        Construye las bandas desde un perfil de config/band_profiles.yaml
+        (fuente de verdad única — Fase 0). Permite que el pipeline modular use
+        los mismos perfiles demográficos que el pipeline de experimentos.
+        """
+        from config.profiles import get_profile
+        b = get_profile(profile_name).bands_as_dict()
+        return cls(
+            delta=b["delta"], theta=b["theta"], alpha=b["alpha"],
+            beta=b["beta"], gamma=b["gamma"],
+        )
+
 @dataclass
 class SpikeDetectionConfig:
     """Configuración para detección de espigas"""

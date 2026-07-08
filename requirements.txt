@@ -17,3 +17,9 @@ matplotlib>=3.4.0
 
 # Utilidades
 tqdm>=4.60.0
+
+# Configuración declarativa de perfiles de banda (Fase 0)
+pyyaml>=6.0
+
+# Interfaz explicativa (Fase 1)
+streamlit>=1.30.0

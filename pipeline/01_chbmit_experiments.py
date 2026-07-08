@@ -11,10 +11,14 @@ import argparse
 from datetime import datetime
 import json
 import re
+import sys
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional
+
+# Permite importar el paquete `config` aunque el script se ejecute desde pipeline/.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import numpy as np
 import pandas as pd
@@ -47,6 +51,10 @@ def integrate_trapezoid(y: np.ndarray, x: np.ndarray, axis: int) -> np.ndarray:
 # ----------------------------
 # Configuración por defecto
 # ----------------------------
+# NOTA: estas bandas se mantienen como fallback histórico. La fuente de verdad
+# es config/band_profiles.yaml (perfil `standard_adult` == estos valores). El
+# perfil de bandas usado en cada corrida se selecciona con --band_profile y
+# queda registrado en el run_manifest para trazabilidad (Objetivo 3).
 DEFAULT_BANDS = {
     "delta": (0.5, 4.0),
     "theta": (4.0, 8.0),
@@ -54,6 +62,31 @@ DEFAULT_BANDS = {
     "beta":  (13.0, 30.0),
     "gamma": (30.0, 45.0),
 }
+
+
+def resolve_bands(band_profile: Optional[str]) -> Tuple[Dict[str, Tuple[float, float]], Dict]:
+    """
+    Resuelve las bandas a partir del perfil declarativo (config/band_profiles.yaml).
+
+    Devuelve (bands_dict, profile_meta). Si no se pide perfil o el config no está
+    disponible, cae a DEFAULT_BANDS (línea base de la tesis) sin fallar.
+    """
+    if not band_profile:
+        return DEFAULT_BANDS, {"name": "default_bands", "source": "DEFAULT_BANDS (fallback)"}
+    try:
+        from config.profiles import get_profile
+        prof = get_profile(band_profile)
+        meta = {
+            "name": prof.name,
+            "label": prof.label,
+            "is_thesis_baseline": prof.is_thesis_baseline,
+            "reference": prof.reference,
+            "source": "config/band_profiles.yaml",
+        }
+        return prof.bands_as_dict(), meta
+    except Exception as e:
+        print(f"[WARN] No se pudo cargar el perfil '{band_profile}' ({e}). Uso DEFAULT_BANDS.")
+        return DEFAULT_BANDS, {"name": "default_bands", "source": f"fallback tras error: {e}"}
 
 
 @dataclass(frozen=True)
@@ -697,6 +730,13 @@ def main():
     parser.add_argument("--h_freq", type=float, default=45.0)
     parser.add_argument("--notch", type=float, default=None)
     parser.add_argument("--resample_hz", type=float, default=256.0)
+    parser.add_argument(
+        "--band_profile",
+        type=str,
+        default=None,
+        help="Perfil de bandas de config/band_profiles.yaml (ej. standard_adult, "
+             "pediatric_6_10). Si se omite, usa DEFAULT_BANDS (línea base de tesis).",
+    )
 
     parser.add_argument("--max_interictal_per_file", type=int, default=300)
     parser.add_argument("--n_splits", type=int, default=7)
@@ -728,8 +768,10 @@ def main():
         resample_hz=args.resample_hz,
         verbose=False,
     )
+    bands, band_profile_meta = resolve_bands(args.band_profile)
+    print(f"[BANDS] Perfil: {band_profile_meta['name']} | bandas: {bands}")
     feat_cfg = FeatureConfig(
-        bands=DEFAULT_BANDS,
+        bands=bands,
         use_bandpower_rel=True,
         use_rms=True,
         use_kurtosis=True,
@@ -928,6 +970,9 @@ def main():
         feature_sets=feature_sets,
         models=models,
     )
+    # Trazabilidad: registra qué perfil de bandas se usó (Objetivo 3).
+    manifest["band_profile"] = band_profile_meta
+    manifest["bands"] = {k: list(v) for k, v in bands.items()}
     manifest["artifacts"] = {
         "windows_dataset": str(run_df_path.resolve()),
         "results": str(run_res_path.resolve()),

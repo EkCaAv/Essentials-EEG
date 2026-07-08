@@ -42,6 +42,11 @@ data/**/*.edf.seizures
 *.pid
 *.seed
 
+# Artefactos de runtime de la interfaz (Fase 1)
+interface/_runs/
+interface/_boot_test.log
+out_interface/
+
 # Excluir configuraciones locales y directorios temporales personales
 .claude/
 .claude/*

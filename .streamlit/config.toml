@@ -1,0 +1,9 @@
+# Tema sobrio, corporativo, con aire clínico (apoyo médico).
+# Paleta: azul-petróleo médico + grises neutros sobre fondo claro.
+[theme]
+base = "light"
+primaryColor = "#15657A"            # azul-petróleo clínico (acentos, botones)
+backgroundColor = "#FFFFFF"         # blanco clínico
+secondaryBackgroundColor = "#EEF2F4" # gris muy claro (sidebar, tarjetas)
+textColor = "#1B2A33"               # gris pizarra (texto)
+font = "sans serif"

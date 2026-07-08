@@ -1,0 +1,121 @@
+# ============================================================================
+# band_profiles.yaml — FUENTE DE VERDAD ÚNICA de bandas de frecuencia EEG
+# ============================================================================
+#
+# Fase 0/2 del proyecto. Centraliza la definición de bandas (antes duplicada en
+# config/base_config.py::BandDefinitions y pipeline/01_chbmit_experiments.py::DEFAULT_BANDS)
+# y la convierte en "perfiles" documentados, seleccionables por demografía.
+#
+# PRINCIPIO DE REPRODUCIBILIDAD (Objetivo 3):
+#   - El perfil `standard_adult` reproduce EXACTAMENTE las bandas usadas en los
+#     experimentos de la tesis (DEFAULT_BANDS). NO debe modificarse: garantiza
+#     que los resultados ya publicados sigan siendo reproducibles.
+#   - Los perfiles pediátricos son ALTERNATIVAS con justificación clínica. Cada
+#     corrida registra qué perfil usó (run_manifest), de modo que cambiar bandas
+#     nunca rompe la trazabilidad: queda explícito en el manifiesto.
+#
+# Cada perfil declara:
+#   bands      : límites de banda en Hz [low, high]
+#   applies_to : rango demográfico sugerido (age_min, age_max, sex)
+#   rationale  : justificación clínica/neurofisiológica
+#   reference  : fuente bibliográfica
+# ============================================================================
+
+# Perfil usado por defecto si no se especifica otro (preserva la tesis).
+default_profile: standard_adult
+
+profiles:
+
+  # --------------------------------------------------------------------------
+  # PERFIL DE REFERENCIA — reproduce los experimentos de la tesis.
+  # --------------------------------------------------------------------------
+  standard_adult:
+    label: "Estándar clínico (adulto)"
+    bands:
+      delta: [0.5, 4.0]
+      theta: [4.0, 8.0]
+      alpha: [8.0, 13.0]
+      beta:  [13.0, 30.0]
+      gamma: [30.0, 45.0]
+    applies_to:
+      age_min: 13
+      age_max: 120
+      sex: any
+    rationale: >
+      Bandas canónicas de la electroencefalografía clínica. Son las usadas en
+      los experimentos formales de la tesis (DEFAULT_BANDS). Sirven como línea
+      base reproducible y como referencia comparativa frente a perfiles ajustados
+      por edad.
+    reference: "Niedermeyer & da Silva (2011), Electroencephalography, 6th ed."
+    is_thesis_baseline: true
+
+  # --------------------------------------------------------------------------
+  # PERFIL DE LA POBLACIÓN DE ESTUDIO — niños 6 a 10 años (CHB-MIT).
+  # --------------------------------------------------------------------------
+  pediatric_6_10:
+    label: "Pediátrico 6–10 años (población de estudio)"
+    bands:
+      # El ritmo posterior dominante (PDR) madura con la edad: a los 6 años
+      # ronda 8–9 Hz y alcanza ~10 Hz hacia los 10. Se baja el límite inferior
+      # de alpha y se ajusta theta para no solapar el alpha lento infantil.
+      delta: [0.5, 4.0]
+      theta: [4.0, 7.0]
+      alpha: [7.0, 12.0]
+      beta:  [12.0, 30.0]
+      gamma: [30.0, 45.0]
+    applies_to:
+      age_min: 6
+      age_max: 10
+      sex: any
+    rationale: >
+      En niños de edad escolar el ritmo posterior dominante es más lento que en
+      el adulto. Ajustar los límites de alpha/theta a la maduración real del PDR
+      reduce la fuga de potencia alpha hacia la banda theta y mejora la
+      especificidad fisiológica de las características extraídas en esta población.
+    reference: >
+      Marcuse et al. (2008); Chiang et al. (2011), "Age trend of development of
+      the posterior dominant rhythm". Clinical Neurophysiology.
+    is_thesis_baseline: false
+
+  # --------------------------------------------------------------------------
+  # PERFIL PRIMERA INFANCIA — menores de 6 años.
+  # --------------------------------------------------------------------------
+  pediatric_under_6:
+    label: "Primera infancia (<6 años)"
+    bands:
+      delta: [0.5, 4.0]
+      theta: [4.0, 6.5]
+      alpha: [6.5, 10.0]
+      beta:  [10.0, 30.0]
+      gamma: [30.0, 45.0]
+    applies_to:
+      age_min: 0
+      age_max: 5
+      sex: any
+    rationale: >
+      En lactantes y preescolares el PDR puede situarse entre 6 y 8 Hz. Los
+      límites se desplazan hacia abajo para capturar el alpha inmaduro sin
+      confundirlo con actividad theta normal a esta edad.
+    reference: "Marcuse et al. (2008), Rowan's Primer of EEG, capítulo pediátrico."
+    is_thesis_baseline: false
+
+  # --------------------------------------------------------------------------
+  # PERFIL ADOLESCENTE — 11 a 17 años (transición hacia el patrón adulto).
+  # --------------------------------------------------------------------------
+  adolescent:
+    label: "Adolescente 11–17 años"
+    bands:
+      delta: [0.5, 4.0]
+      theta: [4.0, 7.5]
+      alpha: [7.5, 13.0]
+      beta:  [13.0, 30.0]
+      gamma: [30.0, 45.0]
+    applies_to:
+      age_min: 11
+      age_max: 17
+      sex: any
+    rationale: >
+      Hacia la adolescencia el PDR ya se aproxima al adulto (~10 Hz) pero el
+      límite inferior de alpha aún es ligeramente más bajo. Perfil de transición.
+    reference: "Chiang et al. (2011), Clinical Neurophysiology."
+    is_thesis_baseline: false
